@@ -1,27 +1,16 @@
-name: Deploy to Production
+steps:
+  - name: Deploy
+    run: |
+      cd $APP_DIR
 
-on:
-  push:
-    branches:
-      - main
+      git fetch origin
+      git reset --hard origin/main   # 🔥 FORCE SYNC
+      git clean -fd                  # 🔥 REMOVE extra files
 
-env:
-  APP_DIR: /home/runner/BookMyTurf
-  APP_NAME: book-my-turf
+      npm install
 
-jobs:
-  deploy:
-    runs-on: self-hosted
+      pm2 describe $APP_NAME > /dev/null \
+        && pm2 reload $APP_NAME \
+        || pm2 start npm --name $APP_NAME -- start
 
-    steps:
-      - name: Deploy
-        run: |
-          cd $APP_DIR
-          git pull origin main
-          npm install
-
-          pm2 describe $APP_NAME > /dev/null \
-            && pm2 reload $APP_NAME \
-            || pm2 start npm --name $APP_NAME -- start
-
-          pm2 save
+      pm2 save
