@@ -6,7 +6,7 @@ on:
       - main
 
 env:
-  APP_DIR: /root/BookMyTurf
+  APP_DIR: /home/runner/BookMyTurf
   APP_NAME: book-my-turf
 
 jobs:
