@@ -1,16 +1,36 @@
-steps:
-  - name: Deploy
-    run: |
-      cd $APP_DIR
+name: Deploy to Production
 
-      git fetch origin
-      git reset --hard origin/main   # 🔥 FORCE SYNC
-      git clean -fd                  # 🔥 REMOVE extra files
+on:
+  push:
+    branches:
+      - main
 
-      npm install
+env:
+  APP_DIR: /home/runner/BookMyTurf
+  APP_NAME: book-my-turf
 
-      pm2 describe $APP_NAME > /dev/null \
-        && pm2 reload $APP_NAME \
-        || pm2 start npm --name $APP_NAME -- start
+jobs:
+  deploy:
+    runs-on: self-hosted
 
-      pm2 save
+    steps:
+      - name: Deploy
+        run: |
+          cd $APP_DIR
+
+          # Save local changes (including .env)
+          git stash --include-untracked
+
+          # Pull latest code
+          git pull origin main
+
+          # Restore .env and local files
+          git stash pop || true
+
+          npm install
+
+          pm2 describe $APP_NAME > /dev/null \
+            && pm2 reload $APP_NAME \
+            || pm2 start npm --name $APP_NAME -- start
+
+          pm2 save
