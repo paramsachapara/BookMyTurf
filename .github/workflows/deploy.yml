@@ -11,22 +11,17 @@ env:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: 100.86.30.24
-          username: root
-          password: ${{ secrets.SERVER_PASSWORD }}
-          script: |
-            cd $APP_DIR
-            git pull origin main
-            npm install
+      - name: Deploy
+        run: |
+          cd $APP_DIR
+          git pull origin main
+          npm install
 
-            pm2 describe $APP_NAME > /dev/null \
-              && pm2 reload $APP_NAME \
-              || pm2 start npm --name $APP_NAME -- start
+          pm2 describe $APP_NAME > /dev/null \
+            && pm2 reload $APP_NAME \
+            || pm2 start npm --name $APP_NAME -- start
 
-            pm2 save
+          pm2 save
