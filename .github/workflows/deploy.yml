@@ -3,7 +3,11 @@ name: Deploy to Production
 on:
   push:
     branches:
-      - main   # ONLY MAIN TRIGGERS
+      - main
+
+env:
+  APP_DIR: /root/BookMyTurf
+  APP_NAME: book-my-turf
 
 jobs:
   deploy:
@@ -17,7 +21,12 @@ jobs:
           username: root
           password: ${{ secrets.SERVER_PASSWORD }}
           script: |
-            cd /root/BookMyTurf
+            cd $APP_DIR
             git pull origin main
             npm install
-            pm2 restart e-management
+
+            pm2 describe $APP_NAME > /dev/null \
+              && pm2 reload $APP_NAME \
+              || pm2 start npm --name $APP_NAME -- start
+
+            pm2 save

@@ -1,6 +1,5 @@
 const User = require("../models/UserModel");
 const Club = require("../models/ClubModel");
-const bcrypt = require("bcryptjs");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
 const { generateToken } = require("../utils/jwtUtils");
 const asyncHandler = require("../utils/asyncHandler");
@@ -14,14 +13,14 @@ exports.login = asyncHandler(async (req, res) => {
 
   const user = await User.findOne({ email }).select("+password");
   if (!user) {
-    return errorResponse(res, 400, "User not found");
+    return errorResponse(res, 400, "Invalid credentials"); // Better security than "User not found"
   }
 
   if (!user.isActive && user.role !== "super_admin") {
-    return errorResponse(res, 400, "User is not active contact to admin");
+    return errorResponse(res, 400, "User is not active. Please contact administrator.");
   }
 
-  const isPasswordValid = await bcrypt.compare(password, user.password);
+  const isPasswordValid = await user.comparePassword(password);
   if (!isPasswordValid) {
     return errorResponse(res, 400, "Invalid credentials");
   }
@@ -64,12 +63,11 @@ exports.register = asyncHandler(async (req, res) => {
     isActive,
   } = req.body;
 
-  //   const allowedRoles = ["super_admin", "club_owner"];
-  if (!role.includes(role)) {
+  const allowedRoles = ["super_admin", "club_owner", "user"];
+  if (!allowedRoles.includes(role)) {
     return errorResponse(res, 400, "Invalid role");
   }
 
-  // Check if name already exists
   const existingUser = await User.findOne({ email });
   if (existingUser) {
     return errorResponse(
@@ -78,21 +76,12 @@ exports.register = asyncHandler(async (req, res) => {
       "Email already registered. Please use a different email.",
     );
   }
-  // Check if email already exists
-  const existingEmail = await User.findOne({ email });
-  if (existingEmail) {
-    return errorResponse(
-      res,
-      400,
-      "Email already registered. Please use a different email.",
-    );
-  }
 
-  const hashedPassword = await bcrypt.hash(password, 10);
+  // Password hashing is handled by User Model's pre-save hook
   const user = await User.create({
     name,
     email,
-    password: hashedPassword,
+    password,
     role,
     club,
     clubAddress,
@@ -101,7 +90,6 @@ exports.register = asyncHandler(async (req, res) => {
     isActive,
   });
 
-  // Automatically create Club if owner
   if (role === "club_owner") {
     await Club.create({
       name: club,
@@ -120,10 +108,8 @@ exports.register = asyncHandler(async (req, res) => {
       email: user.email,
       role: user.role,
       club: user.club,
-      clubAddress: user.clubAddress,
-      clubCity: user.clubCity,
-      clubState: user.clubState,
       isActive: user.isActive,
     },
   });
 });
+
