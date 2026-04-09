@@ -14,14 +14,71 @@ function timesOverlap(s1, e1, s2, e2) {
   const b = timeToMinutes(e1);
   const c = timeToMinutes(s2);
   const d = timeToMinutes(e2);
-  return a < d && c < b;
+  
+  // Convert both time ranges to minute arrays for easier comparison
+  const range1 = getTimeRange(a, b);
+  const range2 = getTimeRange(c, d);
+  
+  // Check if any minute in range1 exists in range2
+  return range1.some(minute => range2.includes(minute));
+}
+
+function getTimeRange(start, end) {
+  const range = [];
+  
+  // Handle overnight booking
+  if (end <= start) {
+    // From start to midnight (1440 minutes)
+    for (let i = start; i < 1440; i++) {
+      range.push(i);
+    }
+    // From midnight to end
+    for (let i = 0; i < end; i++) {
+      range.push(i);
+    }
+  } else {
+    // Regular booking
+    for (let i = start; i < end; i++) {
+      range.push(i);
+    }
+  }
+  
+  return range;
 }
 
 function durationHours(start, end) {
   const s = timeToMinutes(start);
   const e = timeToMinutes(end);
-  if (e <= s) return 0;
+  
+  // Handle overnight bookings (e.g., 23:00 to 02:00)
+  if (e <= s) {
+    // Add 24 hours (1440 minutes) to end time for overnight calculation
+    return (e + 1440 - s) / 60;
+  }
+  
   return (e - s) / 60;
+}
+
+/**
+ * Calculate booking date based on 6:00 AM business day rule
+ * Bookings between 6:00 AM and 11:59 PM → Record on the same date
+ * Bookings between 12:00 AM and 5:59 AM → Record on the previous day
+ * @param {Date} selectedDate - The date selected by user
+ * @param {string} startTime - Booking start time in "HH:MM" format
+ * @returns {Date} The correct booking date for database storage
+ */
+function calculateBusinessDayDate(selectedDate, startTime) {
+  const bookingDate = new Date(selectedDate);
+  bookingDate.setHours(0, 0, 0, 0);
+  
+  const startHour = parseInt(startTime.split(':')[0]);
+  
+  // If booking time is before 6 AM, it belongs to previous business day
+  if (startHour < 6) {
+    bookingDate.setDate(bookingDate.getDate() - 1);
+  }
+  
+  return bookingDate;
 }
 
 /**
@@ -86,7 +143,7 @@ async function processBookingRequest(req, res, idToUpdate = null) {
     if (!f_clubId) return res.status(400).json({ success: false, message: "clubId is required" });
 
     const date = f_date_val ? new Date(f_date_val) : new Date();
-    date.setHours(0, 0, 0, 0);
+    const businessDate = calculateBusinessDayDate(date, f_st);
 
     const yards = await Yard.find({ _id: { $in: f_ids } }).lean();
     if (yards.length !== f_ids.length) return res.status(400).json({ success: false, message: "One or more yards not found" });
@@ -102,13 +159,13 @@ async function processBookingRequest(req, res, idToUpdate = null) {
       if (club && club.isActive === false) return res.status(403).json({ success: false, message: "Your club is inactive. Contact admin." });
     }
 
-    const nextDay = new Date(date);
+    const nextDay = new Date(businessDate);
     nextDay.setDate(nextDay.getDate() + 1);
     for (const y of yards) {
       const match = {
         bookingStatus: { $nin: ["cancelled", "canceled", "Cancelled", "Canceled"] },
         $or: [{ yardId: y._id }, { yardIds: y._id }],
-        bookingDate: { $gte: date, $lt: nextDay }
+        bookingDate: { $gte: businessDate, $lt: nextDay }
       };
       if (idToUpdate) match._id = { $ne: idToUpdate };
 
@@ -121,7 +178,7 @@ async function processBookingRequest(req, res, idToUpdate = null) {
     }
 
     const durationH = durationHours(f_st, f_et);
-    if (durationH <= 0) return res.status(400).json({ success: false, message: "end_time must be after start_time" });
+    if (durationH <= 0) return res.status(400).json({ success: false, message: "Invalid time slot. Duration must be positive." });
 
     const yardBreakdown = [];
     let computedTotal = 0;
@@ -172,7 +229,7 @@ async function processBookingRequest(req, res, idToUpdate = null) {
       yardIds: f_ids,
       start_time: String(f_st).trim(),
       end_time: String(f_et).trim(),
-      bookingDate: date,
+      bookingDate: businessDate,
       userName: String(f_userName).trim(),
       mobileNumber: String(f_mobileNumber).trim(),
       yardBreakdown,
@@ -277,19 +334,19 @@ exports.updateBooking = async (req, res) => {
         return res.status(400).json({ success: false, message: "start_time and end_time are required when updating time" });
       }
       if (durationHours(st, et) <= 0) {
-        return res.status(400).json({ success: false, message: "end_time must be after start_time" });
+        return res.status(400).json({ success: false, message: "Invalid time slot. Duration must be positive." });
       }
       const yardIdsToCheck = booking.yardIds?.length ? booking.yardIds : (booking.yardId ? [booking.yardId] : []);
-      const date = new Date(booking.bookingDate);
-      date.setHours(0, 0, 0, 0);
-      const nextDay = new Date(date);
+      const originalDate = new Date(booking.bookingDate);
+      const businessDate = calculateBusinessDayDate(originalDate, st);
+      const nextDay = new Date(businessDate);
       nextDay.setDate(nextDay.getDate() + 1);
       for (const yid of yardIdsToCheck) {
         const existing = await Booking.find({
           _id: { $ne: id },
           bookingStatus: { $nin: ["cancelled", "canceled", "Cancelled", "Canceled"] },
           $or: [{ yardId: yid }, { yardIds: yid }],
-          bookingDate: { $gte: date, $lt: nextDay }
+          bookingDate: { $gte: businessDate, $lt: nextDay }
         }).lean();
         for (const b of existing) {
           const bStart = b.start_time || "";
